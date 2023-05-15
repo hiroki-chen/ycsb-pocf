@@ -57,7 +57,7 @@ fn read_modify_write_proportion_default() -> f64 {
     0.0
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct WorkloadConfiguration {
     #[serde(default = "zero_u64", rename = "insertstart")]
     pub insert_start: u64,
