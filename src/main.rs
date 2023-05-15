@@ -24,13 +24,15 @@ pub mod generator;
 pub mod workload;
 pub mod ycsb;
 
-#[derive(ValueEnum, Clone, Copy, Debug)]
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunType {
     /// Generates some random data.
     Load,
     Run,
     /// Currently not sure what this should do...
     Warmup,
+    /// Generates test data and dumps to the disk (for our convenience).
+    Dump
 }
 
 #[derive(Parser, Debug)]

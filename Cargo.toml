@@ -6,6 +6,7 @@ edition = "2021"
 
 [features]
 default = []
+sgx_no_verify = ["sgx"]
 sev = ["pobf_crypto/sev"]
 sgx = ["pobf_crypto/sgx", "sgx_types", "sgx_urts"]
 
@@ -19,3 +20,4 @@ serde = { version = "1.0.163", features = ["derive"] }
 toml = "0.7.3"
 sgx_types = { git = "https://github.com/apache/incubator-teaclave-sgx-sdk.git", branch = "v2.0.0-preview", package = "sgx_types", optional = true }
 sgx_urts = { git = "https://github.com/apache/incubator-teaclave-sgx-sdk.git", branch = "v2.0.0-preview", package = "sgx_urts", optional = true }
+spin = "0.9.8"

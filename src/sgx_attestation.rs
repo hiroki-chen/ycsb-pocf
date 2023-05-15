@@ -6,7 +6,10 @@ use std::{
 
 use log::{error, info, warn};
 use pobf_crypto::{handle_enclave_pubkey, KeyPair, KDF_MAGIC_STR};
+
+#[allow(unused_imports)]
 use rand::{rngs::OsRng, RngCore};
+#[allow(unused_imports)]
 use sgx_types::{
     error::Quote3Error,
     function::{
@@ -18,6 +21,9 @@ use sgx_types::{
     },
 };
 use sgx_urts::enclave::SgxEnclave;
+use spin::Once;
+
+static VERIFICATION_ENCLAVE: Once<SgxEnclave> = Once::new();
 
 use crate::{
     ffi::sgx_tvl_verify_qve_report_and_identity,
@@ -25,6 +31,10 @@ use crate::{
 };
 
 const ENCLAVE_FILE: &'static str = "./lib/enclave.signed.so";
+
+pub fn init_verification_library() {
+    VERIFICATION_ENCLAVE.call_once(|| SgxEnclave::create(ENCLAVE_FILE, false).unwrap());
+}
 
 pub fn attest_and_perform_task(
     reader: &mut BufReader<TcpStream>,
@@ -83,6 +93,8 @@ pub fn attest_and_perform_task(
     let data = receive_vecaes_data(reader, &key_pair)?;
     info!("[+] Succeeded.");
 
+    std::fs::write("/tmp/output.txt", &data).unwrap();
+
     Ok(data)
 }
 
@@ -118,116 +130,122 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
     reader.read_exact(&mut ti).unwrap();
     ti.truncate(ti_len_network);
 
-    // Decrypt them.
-    let decrypted_ti = key_pair.decrypt_with_smk(&ti).or_else(|e| {
-        error!("[-] Decryption failed due to {:?}.", e);
-        Err(Error::from(ErrorKind::InvalidData))
-    })?;
-    let decrypted_quote = key_pair.decrypt_with_smk(&quote).or_else(|e| {
-        error!("[-] Decryption failed due to {:?}.", e);
-        Err(Error::from(ErrorKind::InvalidData))
-    })?;
+    #[cfg(feature = "sgx_no_verify")]
+    return Ok(());
 
-    let expiration_check_data: i64 = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        .try_into()
-        .unwrap();
-    let mut p_collateral_expiration_status = 1u32;
-    let mut p_quote_verification_result = QlQvResult::default();
-    let mut p_qve_report_info = QlQeReportInfo::default();
-    let mut supplemental_data_size = 0u32;
-    let mut supplemental_data = QlQvSupplemental::default();
+    #[cfg(not(feature = "sgx_no_verify"))]
+    {
+        // Decrypt them.
+        let decrypted_ti = key_pair.decrypt_with_smk(&ti).or_else(|e| {
+            error!("[-] Decryption failed due to {:?}.", e);
+            Err(Error::from(ErrorKind::InvalidData))
+        })?;
+        let decrypted_quote = key_pair.decrypt_with_smk(&quote).or_else(|e| {
+            error!("[-] Decryption failed due to {:?}.", e);
+            Err(Error::from(ErrorKind::InvalidData))
+        })?;
 
-    // Generate a nonce and fill the report.
-    let mut rand_nonce = vec![0u8; 16];
-    OsRng.fill_bytes(&mut rand_nonce);
-    p_qve_report_info.nonce.rand.copy_from_slice(&rand_nonce);
+        let expiration_check_data: i64 = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .try_into()
+            .unwrap();
+        let mut p_collateral_expiration_status = 1u32;
+        let mut p_quote_verification_result = QlQvResult::default();
+        let mut p_qve_report_info = QlQeReportInfo::default();
+        let mut supplemental_data_size = 0u32;
+        let mut supplemental_data = QlQvSupplemental::default();
 
-    // Fill target info.
-    unsafe {
-        p_qve_report_info.app_enclave_target_info =
-            std::ptr::read(decrypted_ti.as_ptr() as *const _);
-    }
+        // Generate a nonce and fill the report.
+        let mut rand_nonce = vec![0u8; 16];
+        OsRng.fill_bytes(&mut rand_nonce);
+        p_qve_report_info.nonce.rand.copy_from_slice(&rand_nonce);
 
-    // Load policy.
-    info!("[+] Performing sgx_qv_set_enclave_load_policy... ");
-    let res = unsafe { sgx_qv_set_enclave_load_policy(QlRequestPolicy::Ephemeral) };
-    if res != Quote3Error::Success {
+        // Fill target info.
+        unsafe {
+            p_qve_report_info.app_enclave_target_info =
+                std::ptr::read(decrypted_ti.as_ptr() as *const _);
+        }
+
+        // Load policy.
+        info!("[+] Performing sgx_qv_set_enclave_load_policy... ");
+        let res = unsafe { sgx_qv_set_enclave_load_policy(QlRequestPolicy::Ephemeral) };
+        if res != Quote3Error::Success {
+            info!(
+                "[-] sgx_qv_set_enclave_load_policy failed due to {:?}.",
+                res
+            );
+
+            return Err(Error::from(ErrorKind::Unsupported));
+        }
+
+        info!("[+] sgx_qv_set_enclave_load_policy successfully executed!");
+
+        // Call the DCAP quote verify library to get the supplemental data size.
+        info!("[+] Performing sgx_qv_get_quote_supplemental_data_size... ");
+        let res = unsafe { sgx_qv_get_quote_supplemental_data_size(&mut supplemental_data_size) };
+        if res != Quote3Error::Success {
+            info!(
+                "[-] sgx_qv_get_quote_supplemental_data_size failed due to {:?}.",
+                res
+            );
+
+            return Err(Error::from(ErrorKind::Unsupported));
+        }
         info!(
-            "[-] sgx_qv_set_enclave_load_policy failed due to {:?}.",
-            res
+            "[+] sgx_qv_get_quote_supplemental_data_size successfully executed! Size = {}.",
+            supplemental_data_size
         );
 
-        return Err(Error::from(ErrorKind::Unsupported));
-    }
+        // Check length.
+        if supplemental_data_size as usize != std::mem::size_of::<QlQvSupplemental>() {
+            warn!("[!] Quote supplemental data size is different between DCAP QVL and QvE, please make sure you installed DCAP QVL and QvE from same release.");
+            supplemental_data_size = 0u32;
+        }
 
-    info!("[+] sgx_qv_set_enclave_load_policy successfully executed!");
+        let p_supplemental_data = match supplemental_data_size {
+            0 => std::ptr::null_mut(),
+            _ => &mut supplemental_data,
+        };
 
-    // Call the DCAP quote verify library to get the supplemental data size.
-    info!("[+] Performing sgx_qv_get_quote_supplemental_data_size... ");
-    let res = unsafe { sgx_qv_get_quote_supplemental_data_size(&mut supplemental_data_size) };
-    if res != Quote3Error::Success {
-        info!(
-            "[-] sgx_qv_get_quote_supplemental_data_size failed due to {:?}.",
-            res
-        );
+        info!("[+] Performing sgx_qv_verify_quote... ");
 
-        return Err(Error::from(ErrorKind::Unsupported));
-    }
-    info!(
-        "[+] sgx_qv_get_quote_supplemental_data_size successfully executed! Size = {}.",
-        supplemental_data_size
-    );
+        let res = unsafe {
+            sgx_qv_verify_quote(
+                decrypted_quote.as_ptr(),
+                decrypted_quote.len() as u32,
+                std::ptr::null(),
+                expiration_check_data,
+                &mut p_collateral_expiration_status,
+                &mut p_quote_verification_result,
+                &mut p_qve_report_info,
+                supplemental_data_size,
+                p_supplemental_data as *mut u8,
+            )
+        };
 
-    // Check length.
-    if supplemental_data_size as usize != std::mem::size_of::<QlQvSupplemental>() {
-        warn!("[!] Quote supplemental data size is different between DCAP QVL and QvE, please make sure you installed DCAP QVL and QvE from same release.");
-        supplemental_data_size = 0u32;
-    }
+        if res != Quote3Error::Success {
+            info!("[-] sgx_qv_verify_quote failed due to {:?}.", res);
 
-    let p_supplemental_data = match supplemental_data_size {
-        0 => std::ptr::null_mut(),
-        _ => &mut supplemental_data,
-    };
+            return Err(Error::from(ErrorKind::Unsupported));
+        }
 
-    info!("[+] Performing sgx_qv_verify_quote... ");
+        info!("[+] Successfully verified the quote!");
 
-    let res = unsafe {
-        sgx_qv_verify_quote(
-            decrypted_quote.as_ptr(),
-            decrypted_quote.len() as u32,
-            std::ptr::null(),
-            expiration_check_data,
-            &mut p_collateral_expiration_status,
-            &mut p_quote_verification_result,
-            &mut p_qve_report_info,
+        // Call sgx_dcap_tvl API in Intel built enclave to verify QvE's report and identity.
+        // This function allows a user’s enclave to more easily verify the QvE REPORT returned in the
+        // p_qve_report_info parameter in the Verify Quote API was generated by the Intel QvE at an expected TCB
+        // level.
+        verify_qve_report_and_identity(
+            &quote,
+            &p_qve_report_info,
+            p_collateral_expiration_status,
+            p_quote_verification_result,
+            p_supplemental_data,
             supplemental_data_size,
-            p_supplemental_data as *mut u8,
         )
-    };
-
-    if res != Quote3Error::Success {
-        info!("[-] sgx_qv_verify_quote failed due to {:?}.", res);
-
-        return Err(Error::from(ErrorKind::Unsupported));
     }
-
-    info!("[+] Successfully verified the quote!");
-
-    // Call sgx_dcap_tvl API in Intel built enclave to verify QvE's report and identity.
-    // This function allows a user’s enclave to more easily verify the QvE REPORT returned in the
-    // p_qve_report_info parameter in the Verify Quote API was generated by the Intel QvE at an expected TCB
-    // level.
-    verify_qve_report_and_identity(
-        &quote,
-        &p_qve_report_info,
-        p_collateral_expiration_status,
-        p_quote_verification_result,
-        p_supplemental_data,
-        supplemental_data_size,
-    )
 }
 
 pub fn verify_qve_report_and_identity(
@@ -238,19 +256,6 @@ pub fn verify_qve_report_and_identity(
     p_supplemental_data: *const QlQvSupplemental,
     supplemental_data_size: u32,
 ) -> Result<()> {
-    // Create an enclave.
-    let enclave = match SgxEnclave::create(ENCLAVE_FILE, false) {
-        Ok(r) => {
-            info!("[+] Init Enclave Successful, eid: {}!", r.eid());
-            r
-        }
-
-        Err(x) => {
-            error!("[-] Init Enclave Failed, reason: {}!", x.as_str());
-            return Err(Error::from(ErrorKind::InvalidData));
-        }
-    };
-
     // Verify the identity of QvE.
     let mut ret_val = Quote3Error::Success;
     let expiration_check_date = SystemTime::now()
@@ -267,7 +272,7 @@ pub fn verify_qve_report_and_identity(
 
     let res = unsafe {
         sgx_tvl_verify_qve_report_and_identity(
-            enclave.eid(),
+            VERIFICATION_ENCLAVE.get().unwrap().eid(),
             &mut ret_val,
             p_quote.as_ptr(),
             p_quote.len() as u32,

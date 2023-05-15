@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     fmt::{Display, Formatter},
     sync::Mutex,
 };
@@ -127,6 +126,7 @@ pub struct CoreWorkload {
     key_sequence: Mutex<Box<dyn Generator<u64> + Send>>,
     table: String,
     field_count: u64,
+    field_len: usize,
     field_names: Vec<String>,
     field_length_generator: Mutex<Box<dyn Generator<u64> + Send>>,
     operation_chooser: Mutex<DiscreteGenerator<CoreOperation>>,
@@ -150,6 +150,7 @@ impl CoreWorkload {
             key_sequence: Mutex::new(Box::new(CounterGenerator::new(config.insert_start))),
             table: "usertable".into(),
             field_count,
+            field_len: config.field_length as _,
             field_names,
             operation_chooser: Mutex::new(create_operation_generator(config)),
             key_chooser: Mutex::new(get_key_chooser_generator(config)),
@@ -157,46 +158,55 @@ impl CoreWorkload {
     }
 
     /// Execute the operation.
-    pub fn run(&self, db: &mut Box<dyn Database>) {
-        let op = self
-            .operation_chooser
-            .lock()
-            .unwrap()
-            .next_value(&mut self.rng.lock().unwrap());
-        match op {
-            CoreOperation::Read => {
-                let key_num = self.next_key_num();
-                let db_key = format!("{}", fnvhash64(key_num));
-                db.read("user_table", &db_key).unwrap();
-            }
-            CoreOperation::Update => {
-                let key_num = self.next_key_num();
-                let db_key = format!("{}", fnvhash64(key_num));
-                todo!()
-            }
+    pub fn run(&self, db: &mut Box<dyn Database>, cnt: usize) {
+        for _ in 0..cnt {
+            let op = self
+                .operation_chooser
+                .lock()
+                .unwrap()
+                .next_value(&mut self.rng.lock().unwrap());
+            match op {
+                CoreOperation::Read => {
+                    let key_num = self.next_key_num();
+                    let db_key = format!("{}", fnvhash64(key_num));
+                    db.read("usertable", &db_key).unwrap();
+                }
+                CoreOperation::Update => {
+                    let key_num = self.next_key_num();
+                    let db_key: String = format!("{}", fnvhash64(key_num));
+                    let value = Alphanumeric.sample_string::<SmallRng>(
+                        &mut self.rng.lock().unwrap(),
+                        self.field_len,
+                    );
 
-            _ => todo!(),
+                    db.update("usertable", &db_key, &value).unwrap();
+                }
+
+                _ => todo!(),
+            }
         }
     }
 
-    pub fn insert(&self, db: &mut Box<dyn Database>) {
-        let db_key = self
-            .key_sequence
-            .lock()
-            .unwrap()
-            .next_value(&mut self.rng.lock().unwrap());
-        let db_key = format!("{}", fnvhash64(db_key));
+    pub fn insert(&self, db: &mut Box<dyn Database>, cnt: usize) {
+        for _ in 0..cnt {
+            let db_key = self
+                .key_sequence
+                .lock()
+                .unwrap()
+                .next_value(&mut self.rng.lock().unwrap());
+            let db_key = format!("{}", fnvhash64(db_key));
 
-        let field_len = self
-            .field_length_generator
-            .lock()
-            .unwrap()
-            .next_value(&mut self.rng.lock().unwrap());
-        let value = Alphanumeric
-            .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
+            let field_len = self
+                .field_length_generator
+                .lock()
+                .unwrap()
+                .next_value(&mut self.rng.lock().unwrap());
+            let value = Alphanumeric
+                .sample_string::<SmallRng>(&mut self.rng.lock().unwrap(), field_len as usize);
 
-        // We currently insert into only one fields, but the length is 1KB.
-        db.insert(&self.table, &db_key, &value);
+            // We currently insert into only one fields, but the length is 1KB.
+            db.insert(&self.table, &db_key, &value).unwrap();
+        }
     }
 
     fn next_key_num(&self) -> u64 {

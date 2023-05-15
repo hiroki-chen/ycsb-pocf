@@ -40,3 +40,9 @@ Options:
   -h, --help                           Print help
   -V, --version                        Print version
 ```
+
+Note that the database must be loaded before it can be queried! Also, there are some mysterious bugs (include but not limited to `EnclaveLost`, `EnclaveCrashed`) when one tries to run the QvE and the PoCF enclave on the same platform and **in multi-threading mode**. To prevent this, there are ways:
+
+* Disable the verification library (but may introduce security risks) with `--features=sgx_no_verify`.
+* Try to decrease the number of concurrent threads.
+* Restart the enclave and see if it works.

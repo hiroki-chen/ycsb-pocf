@@ -23,7 +23,7 @@ pub trait Database {
     fn load(&mut self) -> YcsbResult<()>;
 
     /// Do the transaction which returns a raw response from the remote database.
-    fn do_transaction(&self) -> YcsbResult<Vec<u8>>;
+    fn do_transaction(&self) -> YcsbResult<Vec<String>>;
 }
 
 #[derive(Default)]
@@ -88,14 +88,8 @@ impl Database for PocfDatabase {
         Ok(())
     }
 
-    fn do_transaction(&self) -> YcsbResult<Vec<u8>> {
-        Ok(self
-            .commands
-            .iter()
-            .cloned()
-            .map(|s| s.into_bytes())
-            .flatten()
-            .collect())
+    fn do_transaction(&self) -> YcsbResult<Vec<String>> {
+        Ok(self.commands.clone())
     }
 }
 
