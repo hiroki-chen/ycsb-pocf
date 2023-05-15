@@ -134,8 +134,8 @@ mod tests {
 
     #[test]
     fn test_min_and_max_parameter() {
-        let min = 5;
-        let max = 10;
+        let min = 1;
+        let max = 1000;
         let zipfian = ZipfianGenerator::from_range(min, max);
         let mut result = std::collections::HashMap::new();
         let mut rng = SmallRng::from_entropy();
@@ -145,6 +145,9 @@ mod tests {
             assert!(val <= max);
             result.entry(val).and_modify(|x| *x += 1).or_insert(1);
         }
-        println!("{:?}", result);
+        println!(
+            "{:?}",
+            result.iter().max_by(|lhs, rhs| (lhs.1).cmp(rhs.1)).unwrap()
+        );
     }
 }

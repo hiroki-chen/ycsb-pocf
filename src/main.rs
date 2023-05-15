@@ -26,8 +26,11 @@ pub mod ycsb;
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 pub enum RunType {
+    /// Generates some random data.
     Load,
     Run,
+    /// Currently not sure what this should do...
+    Warmup,
 }
 
 #[derive(Parser, Debug)]
@@ -88,7 +91,7 @@ fn main() {
         args.thread_number,
         &format!("{}:{}", args.address, args.port),
     ) {
-        Ok(summary) => info!("{summary:?}"),
+        Ok(summary) => info!("\n{summary}"),
         Err(err) => error!("YCSB returned {err}"),
     }
 }

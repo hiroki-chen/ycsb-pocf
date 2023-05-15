@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use log::error;
 
 use crate::ycsb::{YcsbError, YcsbResult};
@@ -7,22 +5,98 @@ use crate::ycsb::{YcsbError, YcsbResult};
 /// An abstract database representation.
 pub trait Database {
     /// Initializes this database.
-    fn init(&self, address: &str) -> YcsbResult<()>;
+    fn init(&mut self, address: &str) -> YcsbResult<()>;
 
     /// Inserts into the database.
-    fn insert(&self, collection: &str, key: &str, value: &str) -> YcsbResult<()>;
+    fn insert(&mut self, collection: &str, key: &str, value: &str) -> YcsbResult<()>;
 
     /// Updates the database.
-    fn update(&self, collection: &str, key: &str, value: &str) -> YcsbResult<()>;
+    fn update(&mut self, collection: &str, key: &str, value: &str) -> YcsbResult<()>;
+
+    /// Reads from the database.
+    fn read(&mut self, collection: &str, key: &str) -> YcsbResult<()>;
 
     /// Dumps the database.
-    fn dump(&self) -> YcsbResult<()>;
+    fn dump(&mut self) -> YcsbResult<()>;
 
     /// Loads the database.
-    fn load(&self) -> YcsbResult<()>;
+    fn load(&mut self) -> YcsbResult<()>;
 
     /// Do the transaction which returns a raw response from the remote database.
     fn do_transaction(&self) -> YcsbResult<Vec<u8>>;
+}
+
+#[derive(Default)]
+pub struct PocfDatabase {
+    /// Stores a bunch of database commands to be executed.
+    commands: Vec<String>,
+}
+
+impl PocfDatabase {
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+
+impl Database for PocfDatabase {
+    fn init(&mut self, _: &str) -> YcsbResult<()> {
+        Ok(())
+    }
+
+    fn insert(&mut self, collection: &str, key: &str, value: &str) -> YcsbResult<()> {
+        self.commands.push(format!(
+            "[{}, insert, {collection}, {key}, {value}];",
+            self.commands.len()
+        ));
+
+        Ok(())
+    }
+
+    fn read(&mut self, collection: &str, key: &str) -> YcsbResult<()> {
+        self.commands.push(format!(
+            "[{}, read, {collection}, {key}];",
+            self.commands.len()
+        ));
+
+        Ok(())
+    }
+
+    fn update(&mut self, collection: &str, key: &str, value: &str) -> YcsbResult<()> {
+        self.commands.push(format!(
+            "[{}, update, {collection}, {key}, {value}];",
+            self.commands.len()
+        ));
+
+        Ok(())
+    }
+
+    fn dump(&mut self) -> YcsbResult<()> {
+        self.commands.push(format!(
+            "[{}, dump, /tmp/pocf_database.db];",
+            self.commands.len()
+        ));
+
+        Ok(())
+    }
+
+    fn load(&mut self) -> YcsbResult<()> {
+        self.commands.push(format!(
+            "[{}, load, /tmp/pocf_database.db];",
+            self.commands.len()
+        ));
+
+        Ok(())
+    }
+
+    fn do_transaction(&self) -> YcsbResult<Vec<u8>> {
+        Ok(self
+            .commands
+            .iter()
+            .cloned()
+            .map(|s| s.into_bytes())
+            .flatten()
+            .collect())
+    }
 }
 
 #[derive(Debug)]
@@ -32,11 +106,9 @@ pub enum DatabaseType {
     Unspecified,
 }
 
-pub fn get_database(ty: DatabaseType) -> YcsbResult<Rc<dyn Database>> {
+pub fn get_database(ty: DatabaseType) -> YcsbResult<Box<dyn Database>> {
     match ty {
-        DatabaseType::PocfDatabase => {
-            todo!()
-        }
+        DatabaseType::PocfDatabase => Ok(Box::new(PocfDatabase::default())),
         _ => {
             error!("Unsupported database type: {ty:?}");
             Err(YcsbError::Unsupported)
