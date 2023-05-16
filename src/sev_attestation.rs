@@ -32,6 +32,7 @@ pub fn attest_and_perform_task(
 
     info!("[+] Sending data...");
     // Read the data and encrypt it.
+    let data = key_pair.encrypt_with_smk(&data).unwrap();
     writer.write_all(data.len().to_string().as_bytes())?;
     writer.write_all(b"\n")?;
     writer.flush()?;

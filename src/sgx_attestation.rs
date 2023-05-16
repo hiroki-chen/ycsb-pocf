@@ -33,7 +33,7 @@ use crate::{
 const ENCLAVE_FILE: &'static str = "./lib/enclave.signed.so";
 
 pub fn init_verification_library() {
-    VERIFICATION_ENCLAVE.call_once(|| SgxEnclave::create(ENCLAVE_FILE, false).unwrap());
+    // VERIFICATION_ENCLAVE.call_once(|| SgxEnclave::create(ENCLAVE_FILE, false).unwrap());
 }
 
 pub fn attest_and_perform_task(
@@ -63,35 +63,25 @@ pub fn attest_and_perform_task(
     writer.write(b"\n").unwrap();
     writer.flush().unwrap();
 
-    info!("[+] Waiting for public key of the enclave.");
     let enclave_pubkey = handle_enclave_pubkey(reader)
         .map_err(|_| {
             error!("[-] Failed to parse enclave public key.");
             return Error::from(ErrorKind::InvalidData);
         })
         .unwrap();
-    info!("[+] Succeeded.");
 
-    info!("[+] Computing ephemeral session key.");
     key_pair
         .compute_shared_key(&enclave_pubkey, KDF_MAGIC_STR.as_bytes())
         .unwrap();
-    info!("[+] Succeeded.");
 
     // Verify the quote sent from the enclave.
-    info!("[+] Verifying the quote...");
     verify_dcap_quote(reader, &key_pair)?;
-    info!("[+] Quote valid!");
 
     // Send initial encrypted data. Trivial data 1,2,3 are just for test.
-    info!("[+] Sending encrypted vector data.");
     send_vecaes_data(writer, data, &key_pair)?;
-    info!("[+] Succeeded.");
 
     // Receive the computed result.
-    info!("[+] Receiving the data.");
     let data = receive_vecaes_data(reader, &key_pair)?;
-    info!("[+] Succeeded.");
 
     std::fs::write("/tmp/output.txt", &data).unwrap();
 
@@ -169,10 +159,9 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
         }
 
         // Load policy.
-        info!("[+] Performing sgx_qv_set_enclave_load_policy... ");
         let res = unsafe { sgx_qv_set_enclave_load_policy(QlRequestPolicy::Ephemeral) };
         if res != Quote3Error::Success {
-            info!(
+            error!(
                 "[-] sgx_qv_set_enclave_load_policy failed due to {:?}.",
                 res
             );
@@ -180,23 +169,16 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
             return Err(Error::from(ErrorKind::Unsupported));
         }
 
-        info!("[+] sgx_qv_set_enclave_load_policy successfully executed!");
-
         // Call the DCAP quote verify library to get the supplemental data size.
-        info!("[+] Performing sgx_qv_get_quote_supplemental_data_size... ");
         let res = unsafe { sgx_qv_get_quote_supplemental_data_size(&mut supplemental_data_size) };
         if res != Quote3Error::Success {
-            info!(
+            error!(
                 "[-] sgx_qv_get_quote_supplemental_data_size failed due to {:?}.",
                 res
             );
 
             return Err(Error::from(ErrorKind::Unsupported));
         }
-        info!(
-            "[+] sgx_qv_get_quote_supplemental_data_size successfully executed! Size = {}.",
-            supplemental_data_size
-        );
 
         // Check length.
         if supplemental_data_size as usize != std::mem::size_of::<QlQvSupplemental>() {
@@ -208,8 +190,6 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
             0 => std::ptr::null_mut(),
             _ => &mut supplemental_data,
         };
-
-        info!("[+] Performing sgx_qv_verify_quote... ");
 
         let res = unsafe {
             sgx_qv_verify_quote(
@@ -226,12 +206,8 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
         };
 
         if res != Quote3Error::Success {
-            info!("[-] sgx_qv_verify_quote failed due to {:?}.", res);
-
             return Err(Error::from(ErrorKind::Unsupported));
         }
-
-        info!("[+] Successfully verified the quote!");
 
         // Call sgx_dcap_tvl API in Intel built enclave to verify QvE's report and identity.
         // This function allows a user’s enclave to more easily verify the QvE REPORT returned in the
@@ -287,10 +263,7 @@ pub fn verify_qve_report_and_identity(
     };
 
     match res {
-        Quote3Error::Success => {
-            info!("[+] QvE's identity checked and passed.");
-            Ok(())
-        }
+        Quote3Error::Success => Ok(()),
 
         e => {
             error!("[-] Invalid QvE! Please check the platform. Error: {:?}", e);
