@@ -46,44 +46,39 @@ pub fn attest_and_perform_task(
     let pubkey_signature = &key_pair.signature;
 
     // Send remote attestation type.
-    writer.write(b"1").unwrap();
-    writer.write(b"\n").unwrap();
-    writer.flush().unwrap();
+    writer.write(b"1")?;
+    writer.write(b"\n")?;
+    writer.flush()?;
 
     // Send public key and the signature.
-    writer.write(&public_key.as_ref()[1..]).unwrap();
-    writer.write(b"\n").unwrap();
-    writer
-        .write(pubkey_signature.len().to_string().as_bytes())
-        .unwrap();
-    writer.write(b"\n").unwrap();
-    writer.flush().unwrap();
+    writer.write(&public_key.as_ref()[1..])?;
+    writer.write(b"\n")?;
+    writer.write(pubkey_signature.len().to_string().as_bytes())?;
+    writer.write(b"\n")?;
+    writer.flush()?;
 
-    writer.write(&pubkey_signature).unwrap();
-    writer.write(b"\n").unwrap();
-    writer.flush().unwrap();
+    writer.write(&pubkey_signature)?;
+    writer.write(b"\n")?;
+    writer.flush()?;
 
-    let enclave_pubkey = handle_enclave_pubkey(reader)
-        .map_err(|_| {
-            error!("[-] Failed to parse enclave public key.");
-            return Error::from(ErrorKind::InvalidData);
-        })
-        .unwrap();
+    let enclave_pubkey = handle_enclave_pubkey(reader).map_err(|_| {
+        error!("[-] Failed to parse enclave public key.");
+        Error::from(ErrorKind::InvalidData)
+    })?;
 
     key_pair
         .compute_shared_key(&enclave_pubkey, KDF_MAGIC_STR.as_bytes())
-        .unwrap();
+        .map_err(|_| Error::from(ErrorKind::InvalidData))?;
 
     // Verify the quote sent from the enclave.
     verify_dcap_quote(reader, &key_pair)?;
 
-    // Send initial encrypted data. Trivial data 1,2,3 are just for test.
     send_vecaes_data(writer, data, &key_pair)?;
 
     // Receive the computed result.
     let data = receive_vecaes_data(reader, &key_pair)?;
 
-    std::fs::write("/tmp/output.txt", &data).unwrap();
+    std::fs::write("/tmp/output.txt", &data)?;
 
     Ok(data)
 }
@@ -92,7 +87,7 @@ pub fn attest_and_perform_task(
 /// caching service and uses it to verify the signature.
 pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) -> Result<()> {
     let mut len = String::with_capacity(DEFAULT_BUFFER_LEN);
-    reader.read_line(&mut len).unwrap();
+    reader.read_line(&mut len)?;
 
     let quote_size = len[..len.len() - 1].parse::<usize>().or_else(|e| {
         error!("[-] Cannot parse quote length due to {:?}.", e);
@@ -100,12 +95,12 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
     })?;
 
     let mut quote = vec![0u8; quote_size + 1];
-    reader.read_exact(&mut quote).unwrap();
+    reader.read_exact(&mut quote)?;
     quote.truncate(quote_size);
 
     // Receive target info.
     len.clear();
-    reader.read_line(&mut len).unwrap();
+    reader.read_line(&mut len)?;
     let ti_len_network = len[..len.len() - 1].parse::<usize>().or_else(|e| {
         error!("[-] Cannot parse quote length due to {:?}.", e);
         Err(Error::from(ErrorKind::InvalidData))
@@ -117,7 +112,7 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
     }
 
     let mut ti = vec![0u8; ti_len_network + 1];
-    reader.read_exact(&mut ti).unwrap();
+    reader.read_exact(&mut ti)?;
     ti.truncate(ti_len_network);
 
     #[cfg(feature = "sgx_no_verify")]
@@ -139,8 +134,7 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            .try_into()
-            .unwrap();
+            .try_into()?;
         let mut p_collateral_expiration_status = 1u32;
         let mut p_quote_verification_result = QlQvResult::default();
         let mut p_qve_report_info = QlQeReportInfo::default();

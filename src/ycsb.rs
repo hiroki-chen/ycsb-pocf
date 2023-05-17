@@ -21,6 +21,8 @@ use crate::{
 use crate::sev_attestation::attest_and_perform_task;
 #[cfg(feature = "sgx")]
 use crate::sgx_attestation::attest_and_perform_task;
+#[cfg(feature = "none")]
+use crate::none_attestation::attest_and_perform_task;
 
 pub type YcsbResult<T> = std::result::Result<T, YcsbError>;
 
@@ -217,9 +219,20 @@ fn ycsb_send_requests(address: &str, data: &[u8]) -> YcsbResult<Vec<u8>> {
     let mut reader = BufReader::new(socket.try_clone().unwrap());
     let mut writer = BufWriter::new(socket);
 
-    let mut key_pair = init_keypair().map_err(|_| YcsbError::BadCrypto)?;
-    attest_and_perform_task(&mut reader, &mut writer, &mut key_pair, &data)
-        .map_err(|_| YcsbError::IoError)
+    // Retry 0x20 times.
+    let mut retry = 0x20;
+    loop {
+        if retry == 0 {
+            return Err(YcsbError::DbError);
+        }
+
+        retry -= 1;
+
+        let mut key_pair = init_keypair().map_err(|_| YcsbError::BadCrypto)?;
+        if let Ok(buf) = attest_and_perform_task(&mut reader, &mut writer, &mut key_pair, &data) {
+            return Ok(buf);
+        }
+    }
 }
 
 /// Generates the dataset for `load`; this generally does the insert operation.
