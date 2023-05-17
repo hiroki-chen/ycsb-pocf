@@ -17,12 +17,12 @@ use crate::{
     RunType,
 };
 
+#[cfg(feature = "none")]
+use crate::none_attestation::attest_and_perform_task;
 #[cfg(feature = "sev")]
 use crate::sev_attestation::attest_and_perform_task;
 #[cfg(feature = "sgx")]
 use crate::sgx_attestation::attest_and_perform_task;
-#[cfg(feature = "none")]
-use crate::none_attestation::attest_and_perform_task;
 
 pub type YcsbResult<T> = std::result::Result<T, YcsbError>;
 
@@ -85,6 +85,7 @@ pub fn ycsb_entry(
     config: &WorkloadConfiguration,
     thread_number: u8,
     address: &str,
+    disk_dump: bool,
 ) -> YcsbResult<BenchSummary> {
     #[cfg(feature = "sgx")]
     crate::sgx_attestation::init_verification_library();
@@ -117,6 +118,7 @@ pub fn ycsb_entry(
                 cloned_address,
                 cloned_config,
                 thread_operation_count,
+                disk_dump,
             )
         }));
     });
@@ -141,9 +143,10 @@ fn ycsb_task(
     address: String,
     config: WorkloadConfiguration,
     thread_operation_count: u64,
+    disk_dump: bool,
 ) -> YcsbResult<()> {
     if run_type == RunType::Dump {
-        let data = ycsb_generate_load(wl.clone(), &config, thread_operation_count)?;
+        let data = ycsb_generate_load(wl.clone(), thread_operation_count, false)?;
         let data = data
             .into_iter()
             .map(|s| s.into_bytes())
@@ -151,7 +154,7 @@ fn ycsb_task(
             .collect::<Vec<_>>();
         std::fs::write("./data_load.bin", data).map_err(|_| YcsbError::IoError)?;
 
-        let data = ycsb_generate_run(wl, &config, thread_operation_count)?;
+        let data = ycsb_generate_run(wl, thread_operation_count)?;
         let data = data
             .into_iter()
             .map(|s| s.into_bytes())
@@ -163,8 +166,8 @@ fn ycsb_task(
     }
 
     let data = match run_type {
-        RunType::Load => ycsb_generate_load(wl, &config, thread_operation_count),
-        RunType::Run => ycsb_generate_run(wl, &config, thread_operation_count),
+        RunType::Load => ycsb_generate_load(wl, thread_operation_count, disk_dump),
+        RunType::Run => ycsb_generate_run(wl, thread_operation_count),
         _ => todo!(),
     }?;
 
@@ -238,11 +241,15 @@ fn ycsb_send_requests(address: &str, data: &[u8]) -> YcsbResult<Vec<u8>> {
 /// Generates the dataset for `load`; this generally does the insert operation.
 fn ycsb_generate_load(
     wl: Arc<CoreWorkload>,
-    config: &WorkloadConfiguration,
     thread_operation_count: u64,
+    disk_dump: bool,
 ) -> YcsbResult<Vec<String>> {
     let mut db = get_database(DatabaseType::PocfDatabase)?;
     wl.insert(&mut db, thread_operation_count as _);
+
+    if disk_dump {
+        db.dump()?;
+    }
 
     db.do_transaction()
 }
@@ -250,7 +257,6 @@ fn ycsb_generate_load(
 /// Generates the workload for `run`.
 fn ycsb_generate_run(
     wl: Arc<CoreWorkload>,
-    config: &WorkloadConfiguration,
     thread_operation_count: u64,
 ) -> YcsbResult<Vec<String>> {
     let mut db = get_database(DatabaseType::PocfDatabase)?;

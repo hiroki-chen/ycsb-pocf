@@ -35,7 +35,7 @@ pub enum RunType {
     /// Currently not sure what this should do...
     Warmup,
     /// Generates test data and dumps to the disk (for our convenience).
-    Dump
+    Dump,
 }
 
 #[derive(Parser, Debug)]
@@ -57,7 +57,9 @@ struct Args {
     /// The thread number (1 for single-threaded client).
     #[clap(value_parser, short, long, default_value_t = 1)]
     thread_number: u8,
-    // Add load/dump => tests the disk performance?
+    /// DB disk operations.
+    #[clap(value_parser, short, long, default_value_t = false)]
+    enable_dump: bool,
 }
 
 fn init_logger() {
@@ -95,6 +97,7 @@ fn main() {
         &config,
         args.thread_number,
         &format!("{}:{}", args.address, args.port),
+        args.enable_dump,
     ) {
         Ok(summary) => info!("\n{summary}"),
         Err(err) => error!("YCSB returned {err}"),

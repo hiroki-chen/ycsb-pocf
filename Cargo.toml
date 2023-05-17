@@ -5,7 +5,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["none"]
+default = []
 sgx_no_verify = ["sgx"]
 sev = ["pobf_crypto/sev"]
 sgx = ["pobf_crypto/sgx", "sgx_types", "sgx_urts"]
