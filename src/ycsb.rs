@@ -118,7 +118,6 @@ pub fn ycsb_entry(
                 cloned_address,
                 cloned_config,
                 thread_operation_count,
-                disk_dump,
             )
         }));
     });
@@ -128,6 +127,18 @@ pub fn ycsb_entry(
         .map(|join_handle| join_handle.join().unwrap_or(Ok(())))
         .collect::<Vec<_>>();
     let runtime = timer.elapsed();
+
+    if disk_dump {
+        let mut db = get_database(DatabaseType::PocfDatabase)?;
+        db.dump()?;
+        let data = db
+            .do_transaction()?
+            .into_iter()
+            .map(|s| s.into_bytes())
+            .flatten()
+            .collect::<Vec<_>>();
+        ycsb_send_requests(address, data.as_slice())?;
+    }
 
     Ok(BenchSummary {
         thread_count: thread_number as _,
@@ -143,10 +154,9 @@ fn ycsb_task(
     address: String,
     config: WorkloadConfiguration,
     thread_operation_count: u64,
-    disk_dump: bool,
 ) -> YcsbResult<()> {
     if run_type == RunType::Dump {
-        let data = ycsb_generate_load(wl.clone(), thread_operation_count, false)?;
+        let data = ycsb_generate_load(wl.clone(), thread_operation_count)?;
         let data = data
             .into_iter()
             .map(|s| s.into_bytes())
@@ -166,7 +176,7 @@ fn ycsb_task(
     }
 
     let data = match run_type {
-        RunType::Load => ycsb_generate_load(wl, thread_operation_count, disk_dump),
+        RunType::Load => ycsb_generate_load(wl, thread_operation_count),
         RunType::Run => ycsb_generate_run(wl, thread_operation_count),
         _ => todo!(),
     }?;
@@ -242,14 +252,9 @@ fn ycsb_send_requests(address: &str, data: &[u8]) -> YcsbResult<Vec<u8>> {
 fn ycsb_generate_load(
     wl: Arc<CoreWorkload>,
     thread_operation_count: u64,
-    disk_dump: bool,
 ) -> YcsbResult<Vec<String>> {
     let mut db = get_database(DatabaseType::PocfDatabase)?;
     wl.insert(&mut db, thread_operation_count as _);
-
-    if disk_dump {
-        db.dump()?;
-    }
 
     db.do_transaction()
 }
