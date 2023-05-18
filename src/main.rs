@@ -5,7 +5,7 @@ use log::{error, info};
 
 use crate::workload::WorkloadConfiguration;
 
-#[cfg(not(any(feature = "sgx", feature = "sev", feature = "none")))]
+#[cfg(not(any(feature = "sgx", feature = "sev", feature = "libos")))]
 compile_error!("Must specify tee type.");
 
 #[cfg(feature = "sgx")]
@@ -18,7 +18,7 @@ pub mod sgx_networking;
 #[cfg(feature = "sev")]
 pub mod sev_attestation;
 
-#[cfg(feature = "none")]
+#[cfg(feature = "libos")]
 pub mod none_attestation;
 
 pub mod db;

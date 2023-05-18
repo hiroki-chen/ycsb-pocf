@@ -17,7 +17,7 @@ use crate::{
     RunType,
 };
 
-#[cfg(feature = "none")]
+#[cfg(feature = "libos")]
 use crate::none_attestation::attest_and_perform_task;
 #[cfg(feature = "sev")]
 use crate::sev_attestation::attest_and_perform_task;
@@ -182,7 +182,7 @@ fn ycsb_task(
     }?;
 
     // Due to the limitation of SGX, we need to send them in "batches".
-    if cfg!(feature = "sgx") && run_type == RunType::Load {
+    if (cfg!(feature = "sgx") || cfg!(feature = "libos")) && run_type == RunType::Load {
         const BATCH_SIZE: usize = 4096;
 
         let batch_num = (data.len() as f64 / BATCH_SIZE as f64).ceil() as usize;

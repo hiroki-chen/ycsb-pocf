@@ -4,7 +4,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TEE_TYPE");
     println!("cargo:rerun-if-changed=build.rs");
 
-    let tee_type = env::var("TEE_TYPE").unwrap_or_else(|_| "SGX".to_string());
+    let tee_type = env::var("TEE_TYPE").unwrap_or_else(|_| "".to_string());
 
     if tee_type.to_uppercase().as_str() == "SGX" {
         Command::new("make")
