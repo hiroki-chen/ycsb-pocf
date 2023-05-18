@@ -72,7 +72,7 @@ impl Database for PocfDatabase {
 
     fn dump(&mut self) -> YcsbResult<()> {
         self.commands.push(format!(
-            "[{}, dump, /tmp/pocf_database.db];",
+            "[{}, dump, ./pocf_database.db];",
             self.commands.len()
         ));
 
@@ -81,7 +81,7 @@ impl Database for PocfDatabase {
 
     fn load(&mut self) -> YcsbResult<()> {
         self.commands.push(format!(
-            "[{}, load, /tmp/pocf_database.db];",
+            "[{}, load, ./pocf_database.db];",
             self.commands.len()
         ));
 
