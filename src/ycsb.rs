@@ -87,9 +87,6 @@ pub fn ycsb_entry(
     address: &str,
     disk_dump: bool,
 ) -> YcsbResult<BenchSummary> {
-    #[cfg(feature = "sgx")]
-    crate::sgx_attestation::init_verification_library();
-
     if run_type == RunType::Load {
         ycsb_prepare_load(&address)?;
     }
@@ -129,8 +126,10 @@ pub fn ycsb_entry(
     let runtime = timer.elapsed();
 
     if disk_dump {
+        // Perform some disk-related operations.
         let mut db = get_database(DatabaseType::PocfDatabase)?;
         db.dump()?;
+        db.load()?;
         let data = db
             .do_transaction()?
             .into_iter()

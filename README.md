@@ -24,6 +24,10 @@ TEE_TYPE=SEV cargo build -r --features=sev
 
 ## Run This Benchmark
 
+We have also written a wrapper script in python to execute the evaluation conveniently. See `eval.py`.
+
+One could instead use `cargo` directly:
+
 ```sh
 $ TEE_TYPE=[tee_type] cargo run -r --features=[tee_type] -h
 

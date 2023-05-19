@@ -1,10 +1,12 @@
 use std::{
     io::{BufRead, BufReader, BufWriter, Error, ErrorKind, Read, Result, Write},
     net::TcpStream,
+    sync::Arc,
     time::SystemTime,
 };
 
-use log::{error, info, warn};
+use lazy_static::lazy_static;
+use log::{error, warn};
 use pobf_crypto::{handle_enclave_pubkey, KeyPair, KDF_MAGIC_STR};
 
 #[allow(unused_imports)]
@@ -21,9 +23,6 @@ use sgx_types::{
     },
 };
 use sgx_urts::enclave::SgxEnclave;
-use spin::Once;
-
-static VERIFICATION_ENCLAVE: Once<SgxEnclave> = Once::new();
 
 use crate::{
     ffi::sgx_tvl_verify_qve_report_and_identity,
@@ -32,8 +31,9 @@ use crate::{
 
 const ENCLAVE_FILE: &'static str = "./lib/enclave.signed.so";
 
-pub fn init_verification_library() {
-    // VERIFICATION_ENCLAVE.call_once(|| SgxEnclave::create(ENCLAVE_FILE, false).unwrap());
+lazy_static! {
+    pub static ref VERIFICATION_ENCLAVE: Arc<SgxEnclave> =
+        Arc::new(SgxEnclave::create(ENCLAVE_FILE, false).unwrap());
 }
 
 pub fn attest_and_perform_task(
@@ -133,8 +133,7 @@ pub fn verify_dcap_quote(reader: &mut BufReader<TcpStream>, key_pair: &KeyPair) 
         let expiration_check_data: i64 = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
-            .as_secs()
-            .try_into()?;
+            .as_secs() as i64;
         let mut p_collateral_expiration_status = 1u32;
         let mut p_quote_verification_result = QlQvResult::default();
         let mut p_qve_report_info = QlQeReportInfo::default();
@@ -242,7 +241,7 @@ pub fn verify_qve_report_and_identity(
 
     let res = unsafe {
         sgx_tvl_verify_qve_report_and_identity(
-            VERIFICATION_ENCLAVE.get().unwrap().eid(),
+            VERIFICATION_ENCLAVE.eid(),
             &mut ret_val,
             p_quote.as_ptr(),
             p_quote.len() as u32,
