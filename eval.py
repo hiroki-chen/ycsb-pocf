@@ -5,15 +5,15 @@
 import argparse
 import os
 import subprocess
+import tqdm
 
 def main(args):
     tee_type = args.tee
-    features = []
     print('[+] Doing evaluation for', tee_type)
+    features = [tee_type]
 
     if tee_type.upper() == 'SGX':
         os.environ['TEE_TYPE'] = 'SGX'
-        features.append('sgx')
 
     features = ','.join(features)
     command = 'cargo run -r --features=' + features + ' -- ' + args.operation + \
@@ -29,7 +29,7 @@ def main(args):
 
     runtime = 0
     throughput = 0
-    for _ in range(args.num):
+    for _ in tqdm.tqdm(range(args.num)):
         # Invoke cargo and redirect stderr to stdout.
         p = subprocess.run(command.split(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         if p.returncode != 0:

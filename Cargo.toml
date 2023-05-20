@@ -17,7 +17,7 @@ clap = { version = "4.2.7", features = ["derive"] }
 env_logger = "0.10.0"
 lazy_static = "1.4.0"
 log = "0.4.17"
-pobf_crypto = { git = "https://github.com/hiroki-chen/pobf_crypto.git", default-features = false }
+pobf_crypto = { git = "https://github.com/hiroki-chen/pobf_crypto.git", branch = "normal", default-features = false }
 rand = { version = "0.8.5", features = ["small_rng"] }
 serde = { version = "1.0.163", features = ["derive"] }
 sgx_types = { git = "https://github.com/apache/incubator-teaclave-sgx-sdk.git", branch = "v2.0.0-preview", package = "sgx_types", optional = true }

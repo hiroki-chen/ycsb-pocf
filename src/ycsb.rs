@@ -155,13 +155,19 @@ fn ycsb_task(
     thread_operation_count: u64,
 ) -> YcsbResult<()> {
     if run_type == RunType::Dump {
+        let mut payload = b"[114514, make_schema, usertable];".to_vec();
+
         let data = ycsb_generate_load(wl.clone(), thread_operation_count)?;
         let data = data
             .into_iter()
             .map(|s| s.into_bytes())
             .flatten()
             .collect::<Vec<_>>();
-        std::fs::write("./data_load.bin", data).map_err(|_| YcsbError::IoError)?;
+        payload.extend_from_slice(&data);
+        payload.extend_from_slice(b"[114514, dump, ./pocf_database.db];");
+        payload.extend_from_slice(b"[114514, load, ./pocf_database.db];");
+
+        std::fs::write("/tmp/data_load.bin", payload).map_err(|_| YcsbError::IoError)?;
 
         let data = ycsb_generate_run(wl, thread_operation_count)?;
         let data = data
@@ -169,7 +175,7 @@ fn ycsb_task(
             .map(|s| s.into_bytes())
             .flatten()
             .collect::<Vec<_>>();
-        std::fs::write("./data_run.bin", data).map_err(|_| YcsbError::IoError)?;
+        std::fs::write("/tmp/data_run.bin", data).map_err(|_| YcsbError::IoError)?;
 
         return Ok(());
     }
